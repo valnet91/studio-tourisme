@@ -1,0 +1,129 @@
+---
+import { $viewsPerImage, setViewsPerImageInStore } from "../store/image.store";
+import { getCollection } from "astro:content";
+import { Image } from "astro:assets";
+import Layout from "../layouts/Layout.astro";
+import { Eye } from "lucide-react";
+
+const imageCollection = await getCollection("images");
+
+function getImageRatio(image) {
+  const { width, height } = image.data.image;
+  return width / height;
+}
+
+function getAspectRatio(image) {
+  const ratio = getImageRatio(image);
+  if (ratio > 1) {
+    return "landscape";
+  } else if (ratio < 1) {
+    return "portrait";
+  } else {
+    return "square";
+  }
+}
+---
+
+<Layout>
+  <div class="mx-auto grid w-full max-w-[1100px] gap-4 md:grid-cols-2 md:pb-12">
+    {
+      imageCollection.map((image, index) => (
+        <jomae-photo
+          class={`relative w-full ${
+            getAspectRatio(image) === "landscape"
+              ? "col-span-2 md:col-span-1 "
+              : "md:row-span-2"
+          }`}
+          style={{
+            backgroundColor: image.data.color,
+          }}
+        >
+          <div
+            class=" group absolute inset-0 z-10 flex h-full items-end from-black/70 to-50% transition-all hover:bg-gradient-to-t">
+            <div class="hidden p-4 text-sm text-white group-hover:flex w-full">
+              <p class="flex-1">
+                {image.data.location}
+              </p>
+              <div class="flex items-center gap-1 text-sm">
+                <Eye size={16} />
+                <span class="views-value"></span>
+              </div>
+            </div>
+          </div>
+          <Image
+            id={image.data.id}
+            src={image.data.image}
+            width={800}
+            quality={90}
+            alt={image.data.location}
+            class="h-full w-full object-cover opacity-0 transition-opacity duration-500"
+          />
+        </jomae-photo>
+      ))
+    }
+  </div>
+</Layout>
+
+<script>
+  import {
+    $viewsPerImage,
+    setViewsPerImageInStore,
+  } from "../store/image.store";
+
+  class JomaePhoto extends HTMLElement {
+    constructor() {
+      super();
+
+      const img = this.querySelector("img");
+
+      this.fetchImageViews(img.id);
+
+      if (img.complete) {
+        this.applyImageLoadedStyles(img);
+      } else {
+        img.addEventListener("load", ({ target }) =>
+          this.applyImageLoadedStyles(target),
+        );
+      }
+
+      $viewsPerImage.subscribe((views) => {
+        const viewsValue = this.querySelector(".views-value");
+        viewsValue.textContent = String(views.get(img.id) || 0);
+      });
+    }
+
+
+    applyImageLoadedStyles(img) {
+      img.classList.remove("opacity-0");
+    }
+
+    fetchImageViews(imageId: string) {
+      if (!imageId) {
+        return;
+      }
+
+      if ($viewsPerImage.get().has(imageId)) {
+        console.log("Views already in store");
+        return;
+      }
+
+      fetch(
+        `/api/${imageId}`,
+        {
+          method: "GET",
+        },
+      ).then((response) => {
+        if (response.ok) {
+          return response.json();
+        }
+
+        throw new Error("Failed to fetch views: " + response.statusText);
+      }).then((count) => {
+        setViewsPerImageInStore(imageId, count.count);
+      });
+    }
+
+  }
+
+  customElements.define("jomae-photo", JomaePhoto);
+</script>
